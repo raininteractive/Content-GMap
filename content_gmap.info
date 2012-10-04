@@ -1,0 +1,6 @@
+name = Content GMap
+description = Adds Location Fields to a selected Content Type, which display an API V3 GMAP.
+package = Location
+core = 7.x
+
+configure = admin/config/content/content_gmap

@@ -1,0 +1,543 @@
+<?php
+
+/**
+ * content_gmap.module
+ * Creates a handy Google Map using API3 on selected Content Types
+ */
+define('content_gmap_PATH', drupal_get_path('module', 'content_gmap'));
+
+/**
+ * Implements hook_help().
+ *
+ * Displays help and module information.
+ *
+ * @param path
+ * Which path of the site we're using to display help
+ * @param arg
+ * Array that holds the current path as returned from arg() function
+ */
+function content_gmap_help($path, $arg) {
+  switch ($path) {
+    case "admin/help#content_gmap":
+      return '<p>' . t("Location information and Google Map V3 Api added to node types") . '</p>';
+      break;
+  }
+}
+
+/**
+ * Implements hook_node_view().
+ */
+function content_gmap_node_view($node, $mode) {
+
+  if ($mode == "full") {
+
+  $node->content['content_gmap'] =  array(
+
+      '#type' => 'markup',
+      '#markup' => content_gmap_build($node->nid, 'view'),
+      '#weight' => 40,
+      );
+
+  return $node;
+
+  }
+}
+
+/**
+ * Implements hook_node_prepare().
+ */
+function content_gmap_node_prepare($node) {
+
+/* If a new node is being created it will have no node nid
+ * so we need to give it a dummy until the map is saved
+ */
+
+  if (!isset($node->nid)) {
+
+  $nid = 0;
+
+  }
+  else {
+
+  $nid = $node->nid;
+
+  }
+
+$node->content['content_gmap'] =  array(
+
+      '#type' => 'markup',
+      '#markup' => content_gmap_build($nid, 'edit'),
+      '#weight' => 40,
+    );
+
+}
+
+/**
+ * Implements of hook_node_insert().
+ */
+function content_gmap_node_insert($node) {
+
+  $node_type = variable_get('content_gmap_node_types', array());
+
+  if (!in_array($node->type, $node_type, TRUE)) {
+  return;
+  }
+
+  drupal_write_record('content_gmap', $node);
+}
+
+/**
+ * Implements of hook_node_update().
+ */
+function content_gmap_node_update($node) {
+
+  $node_type = variable_get('content_gmap_node_types', array());
+
+  if (!in_array($node->type, $node_type, TRUE)) {
+
+  return;
+  }
+
+  $result = db_query('SELECT * FROM {content_gmap} WHERE nid = :nid', array(':nid' => $node->nid, ))->fetchField();
+
+  if (empty($result)) {
+  drupal_write_record('content_gmap', $node);
+  drupal_set_message(t('Your Map has been saved.'));
+  }
+  else {
+  drupal_write_record('content_gmap', $node, array('nid', 'uid'));
+  drupal_set_message(t('Your Map has been updated.'));
+  }
+}
+
+/**
+ * Implements of hook_node_delete().
+ */
+function content_gmap_node_delete($node) {
+
+  $num_deleted = db_delete('content_gmap')
+    ->condition('nid', $node->nid)
+    ->execute();
+}
+
+/**
+ * Implements of hook_form_alter().
+ *
+ *  Variables
+ *
+ *  content_gmap_display
+ *	content_gmap_title
+ *	content_gmap_type
+ *	content_gmap_zoom
+ *	content_gmap_width
+ *	content_gmap_height
+ *	content_gmap_lat
+ *	content_gmap_lng
+ *	content_gmap_marker
+ *	content_gmap_mlat
+ *	content_gmap_mlng
+ *
+ *	Not Used in Rain Map for Now
+ *	content_gmap_info
+ */
+function content_gmap_form_alter(&$form, $form_state, $form_id) {
+
+  // if editing a node
+  if ('node_form' == stristr($form_id, 'node_form')) {
+
+  $node = $form['#node'];
+  $node_type = variable_get('content_gmap_node_types', array());
+
+  if (!in_array($node->type, $node_type, TRUE)) {
+  return;
+  }
+
+  if (!isset($node->nid)) {
+  $nid = 0;
+  }
+  else {
+  $nid = $node->nid;
+  }
+
+   // Get the current GMAP Information for this node from the database
+   // and store it in the node object.
+      $result = db_query('SELECT * FROM {content_gmap} WHERE nid = :nid', array(':nid' => $nid, ));
+      $content_gmap = $result->fetchAssoc();
+
+      if (empty($content_gmap)) {
+
+      $content_gmap = array();
+      $content_gmap['content_gmap_display'] = 0;
+      $content_gmap['content_gmap_title'] = "";
+      $content_gmap['content_gmap_type'] = variable_get('content_gmap_type', 'ROADMAP');
+      $content_gmap['content_gmap_zoom'] = variable_get('content_gmap_zoom', '18');
+      $content_gmap['content_gmap_width'] = variable_get('content_gmap_width', '500');
+      $content_gmap['content_gmap_height'] = variable_get('content_gmap_height', '240');
+      $content_gmap['content_gmap_lat'] = variable_get('content_gmap_lat', '35.670363');
+      $content_gmap['content_gmap_lng'] = variable_get('content_gmap_lng', '139.72653');
+      $content_gmap['content_gmap_marker'] = 1;
+      $content_gmap['content_gmap_mlat'] = variable_get('content_gmap_lat', '35.670363');
+      $content_gmap['content_gmap_mlng'] = variable_get('content_gmap_lng', '139.72653');
+  }
+
+  /* Rain Event Google Map Information */
+
+  $form['content_gmap'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Map Location Information'),
+    '#collapsible' => TRUE,
+    '#collapsed' => FALSE,
+    '#description' => t('<p>Rain Map adds a Google Map to the Node based on these settings'),
+    '#weight' => 20,
+          );
+
+  /* Hide Marker */
+  $form['content_gmap']['content_gmap_display'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Enable Map'),
+    '#description' => t("Check box to display Google Map on Node. Default is Off"),
+    '#default_value' => $content_gmap['content_gmap_display'],
+  );
+
+  /* Map Type */
+   $form['content_gmap']['content_gmap_type'] = array(
+    '#type' => 'select',
+    '#title' => t('Map type'),
+    '#default_value' => $content_gmap['content_gmap_type'],
+    '#description' => NULL,
+    '#options' => array(
+      'ROADMAP' => 'the default view',
+      'SATELLITE' => 'showing Google Earth satellite images',
+      'HYBRID_MAP' => 'showing a mixture of normal and satellite views',
+      'TERRAIN' => 'showing a mixture of normal and satellite views'),
+    );
+   
+
+  /* Map Width */
+  $form['content_gmap']['content_gmap_width'] = array('#type' => 'textfield',
+    '#title' => t('Map Width'),
+    '#default_value' => $content_gmap['content_gmap_width'],
+    '#field_suffix' => 'px',
+    '#description' => NULL,
+    '#size' => 10,
+    );
+
+  /* Map Height */
+  $form['content_gmap']['content_gmap_height'] = array('#type' => 'textfield',
+    '#title' => t('Map Height'),
+    '#default_value' => $content_gmap['content_gmap_height'],
+    '#field_suffix' => 'px',
+    '#description' => NULL,
+    '#size' => 10,
+    );
+
+    $form['content_gmap']['content_gmap_gmap'] = array(
+
+      '#markup' => '<div id="content-gmap" style="width:' . $content_gmap['content_gmap_width'] . 'px;' . 'height:' . $content_gmap['content_gmap_height'] . 'px;"></div>',
+
+    );
+
+  /* Zoom Level */
+
+  // Generate Zoom Level Options
+  $zoom_levels = array('0' => t('0 - minimum zoom level, whole world'));
+  for ($i = 1; $i < 20; $i++) {
+    $zoom_levels["$i"] = "$i";
+  }
+
+  // Append text to Maximum Level
+  $zoom_levels['18'] = t('18 - Street Zoom level');
+  $zoom_levels['20'] = t('20 - maximum zoom level');
+
+  $form['content_gmap']['content_gmap_zoom'] = array('#type' => 'select',
+    '#title' => t('Map zoom level'),
+    '#default_value' => $content_gmap['content_gmap_zoom'],
+    '#description' => t('Adjust the Zoom Level here, or by the Zoom level on the map'),
+    '#options' => $zoom_levels,
+    );
+
+  /* Field Set for Coordinates	*/
+  $form['content_gmap']['latlng'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Map coordinates'),
+    '#collapsible' => FALSE,
+    '#description' => t('Geographical coordinates for your location. You can also position the Map by clicking and dragging it. This website is also useful for getting coordinates from an address: http://www.getlatlon.com'));
+
+  /* The Map Latitude */
+  $form['content_gmap']['latlng']['content_gmap_lat'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Latitude'),
+    '#default_value' => $content_gmap['content_gmap_lat'],
+    );
+
+  /* The Map Longitude */
+  $form['content_gmap']['latlng']['content_gmap_lng'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Longitude'),
+    '#default_value' => $content_gmap['content_gmap_lng'],
+    );
+
+  /* Field Set for Marker Coordinates */
+  $form['content_gmap']['mlatlng'] = array(
+    '#type' => 'fieldset',
+    '#title' => t('Marker coordinates'),
+    '#collapsible' => FALSE,
+    '#description' => t('Geographical coordinates for your Marker. This can be the same as the Map coordinates, but if you wish to place the marker at a different location you can specific the coordinates here or drag and drop the Marker on the map.'));
+
+  /* Hide Marker */
+  $form['content_gmap']['mlatlng']['content_gmap_marker'] = array(
+    '#type' => 'checkbox',
+    '#title' => t('Show Marker'),
+    '#default_value' => $content_gmap['content_gmap_marker'],
+    '#description' => t("If you don't wish to display a marker you can turn if off here. Default is On"),
+    );
+
+  /* The Marker Latitude */
+  $form['content_gmap']['mlatlng']['content_gmap_mlat'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Latitude'),
+    '#default_value' => $content_gmap['content_gmap_mlat'],
+  );
+
+  /* The Marker Longitude */
+  $form['content_gmap']['mlatlng']['content_gmap_mlng'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Longitude'),
+    '#default_value' => $content_gmap['content_gmap_mlng'],
+    );
+
+  /* The Marker Information */
+  /* Not Used in Rain Map for Now
+  $form['content_gmap']['mlatlng']['content_gmap_info'] = array(
+    '#type' => 'textarea',
+    '#title' => t('Marker Information'),
+    '#default_value' => $content_gmap['content_gmap_info'],
+	'#description' => t('The description that will be shown when a user clicks on the marker.'),
+    );
+  */
+  }
+}
+
+
+/**
+ * Implements hook_block_info().
+ */
+function content_gmap_block_info() {
+  $blocks = array();
+  $blocks['content_gmap'] = array(
+'info' => t('A Block containing a GMAP using the Default Rain Map Settings.'),
+'cache' => DRUPAL_CACHE_GLOBAL,
+  );
+
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function content_gmap_block_view($block_name = '') {
+
+  if ($block_name == 'content_gmap') {
+
+  $content = content_gmap_build(false, 'block');
+  $block = array(
+  'subject' => t('Rain Map'),
+  'content' => $content,
+  'weight' => 5,
+  );
+
+return $block;
+  }
+}
+
+/* In cases where the content is new or a map
+ * enabled and added to old content the map will not
+ * have default values if not set in Admin.
+ * This function makes sure maps will always have defaults
+ * and is a convenience function for exceptions where
+ * defaults are required under different conditions.
+ */
+function content_gmap_setDefaults() {
+
+  $content_gmap = array(
+  'content_gmap_display' => 0,
+  'content_gmap_lat' => variable_get('content_gmap_lat', '35.670363'),
+  'content_gmap_lng' => variable_get('content_gmap_lng', '139.72653'),
+  'content_gmap_mlat' => variable_get('content_gmap_mlat', '35.670363'),
+  'content_gmap_mlng' => variable_get('content_gmap_mlng', '139.72653'),
+  'content_gmap_zoom' => variable_get('content_gmap_zoom', '16'),
+  'content_gmap_type' => variable_get('content_gmap_type', 'ROADMAP'),
+  'content_gmap_width' => variable_get('content_gmap_width', '500'),
+  'content_gmap_height' => variable_get('content_gmap_height', '500'),
+  'content_gmap_marker' => variable_get('content_gmap_marker', 1),
+  'content_gmap_title' => '',
+  );
+
+  return $content_gmap;
+}
+
+/**
+ * Menu callback; generate the block with Google Maps.
+ *
+ *  Variables
+ *	content_gmap_title
+ *	content_gmap_type
+ *	content_gmap_zoom
+ *	content_gmap_width
+ *	content_gmap_height
+ *	content_gmap_lat
+ *	content_gmap_lng
+ *	content_gmap_mlat
+ *	content_gmap_mlng
+ *	content_gmap_info  --- Not Used in Rain Map for Now
+ *	content_gmap_body
+ *	content_gmap_footer
+ *
+ */
+function content_gmap_build($nid, $op) {
+
+  if ($op != 'block') {
+    // Get the current GMAP Information for this node from the database
+    // and store it in the node object.
+    $result = db_query('SELECT * FROM {content_gmap} WHERE nid = :nid', array(':nid' => $nid, ));
+
+    $content_gmap = $result->fetchAssoc();
+
+    if (empty($content_gmap)) {
+    $content_gmap = content_gmap_setDefaults();
+    }
+  }
+
+  if ($op == 'block' || $op == 'block-edit') {
+    $content_gmap = content_gmap_setDefaults();
+  }
+
+  if ($content_gmap['content_gmap_display'] == 0 && $op == 'view') {
+  return;
+  }
+
+  if ($op == "edit" || $op == 'block-edit') {
+
+  $marker = 1;
+  }
+  else {
+  $marker = $content_gmap['content_gmap_marker'];
+  }
+
+  $content_gmap_title = $content_gmap['content_gmap_title'];
+
+  /* Load Scripts */
+  $path = drupal_get_path('module', 'content_gmap');
+  global $language;
+  $language->language;
+
+  global $base_url;
+  $fullpath = $base_url . '/' . $path . '/';
+
+  $gpath = 'https://maps.googleapis.com/maps/api/js?v=3.5&sensor=false&language=' . $language->language;  // remove region for now --> .'&region=JA';
+
+  $options = array(
+    'group' => JS_LIBRARY,
+    'type' => 'external'
+  );
+
+  drupal_add_js($gpath, $options);
+  drupal_add_js($path . '/content_gmap.js');
+
+  /* Create Javascript Variables */
+  $content_gmap_settings = array(
+    'title' => $content_gmap_title,
+
+     // 'info' => $content_gmap['content_gmap_info'],
+    'lat' => $content_gmap['content_gmap_lat'],
+    'lng' => $content_gmap['content_gmap_lng'],
+    'marker' => $marker,
+    'mlat' => $content_gmap['content_gmap_mlat'],
+    'mlng' => $content_gmap['content_gmap_mlng'],
+    'zoom' => $content_gmap['content_gmap_zoom'],
+    'type' => $content_gmap['content_gmap_type'],
+    'admin' => user_access('administer content_gmap'),
+    'path' => $fullpath,
+    'op' => $op,
+  );
+
+  if (!$content_gmap_settings['mlat']) {
+  $content_gmap_settings['mlat'] = $content_gmap_settings['lat'];  }
+
+  if (!$content_gmap_settings['mlng']) {
+  $content_gmap_settings['mlng'] = $content_gmap_settings['lng'];  }
+
+  /* Add Variables Array to Javascript */
+  drupal_add_js(array('content_gmap' => $content_gmap_settings), 'setting');
+
+  $output = "";
+
+  if ($content_gmap_title != "") {
+  $output = '<h3 id="content-gmap-title">' . t($content_gmap_title) . '</h3>';
+  };
+
+  if ($op != 'block') {
+
+  $content_gmap['content_gmap_width'] = 300;
+  $content_gmap['content_gmap_height'] = 200;
+
+  }
+
+  $output .= theme('content_gmap_map', array($content_gmap['content_gmap_width'], $content_gmap['content_gmap_height']));
+
+  return $output;
+}
+
+/**
+ * Implements hook_menu().
+ */
+function content_gmap_menu() {
+  $items = array();
+
+  $items['admin/config/content/content_gmap'] = array(
+    'title' => 'Content GMap',
+    'description' => 'Configure Content GMap',
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('content_gmap_admin_settings_form'),
+    'access arguments' => array('administer content_gmap'),
+    'type' => MENU_NORMAL_ITEM,
+    'file' => 'content_gmap.admin.inc',
+  );
+
+  return $items;
+
+}
+
+/**
+ * Implements hook_permission().
+ */
+function content_gmap_permission() {
+  return array(
+    'administer content_gmap' => array(
+      'title' => t('Administer Content GMap'),
+      'description' => t('Modify the settings for the google map in a Content GMap.'),
+    ),
+  );
+}
+
+
+/**
+ * Implements hook_theme().
+ */
+function content_gmap_theme() {
+  return array(
+    'content_gmap_map' => array(),
+    );
+}
+
+/* Theme Functions */
+
+/**
+ * Format div for display Google Maps in it.
+ *
+ * @ingroup themeable
+ */
+function theme_content_gmap_map($v) {
+
+  return ('<div id="content-gmap" style="width: ' . $v[0] . 'px; height: ' . $v[1] . 'px;"></div>');
+}

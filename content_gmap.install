@@ -1,0 +1,106 @@
+<?php
+/**
+ * @file
+ * Install, update and uninstall functions for the Content GMap module.
+ *
+ */
+
+/**
+ * Implements hook_uninstall().
+ * @see http://drupal.org/node/1354
+ */
+function content_gmap_uninstall() {
+
+ // Use schema API to delete database table.
+  drupal_uninstall_schema('content_gmap');
+
+ /* General Settings */
+  variable_del('content_gmap_node_types');
+  variable_del('content_gmap_display');
+  variable_del('content_gmap_title');
+  variable_del('content_gmap_type');
+  variable_del('content_gmap_zoom');
+  variable_del('content_gmap_width');
+  variable_del('content_gmap_height');
+  variable_del('content_gmap_lat');
+  variable_del('content_gmap_lng');
+  variable_del('content_gmap_mdisplay');
+  variable_del('content_gmap_mlat');
+  variable_del('content_gmap_mlng');
+  variable_del('content_gmap_marker');
+
+  /* Not implemented in this Version of the Map
+  variable_del('content_gmap_info');
+  */
+}
+
+
+function content_gmap_enable() {
+  //Check if table exists, if not install the schema.
+  if (db_table_exists('content_gmap') == FALSE) {
+    drupal_install_schema('content_gmap');
+  }
+}
+
+
+/**
+ * Implements hook_schema().
+ *
+ *  Variables
+ *
+ *  content_gmap_node_types
+ *  content_gmap_display
+ *	content_gmap_title
+ *	content_gmap_type
+ *	content_gmap_zoom
+ *	content_gmap_width
+ *	content_gmap_height
+ *	content_gmap_lat
+ *	content_gmap_lng
+ *	content_gmap_mdisplay
+ *	content_gmap_mlat
+ *	content_gmap_mlng
+ *	content_gmap_marker
+ *
+ *  These are not implemented in this version of Content GMap
+ *	content_gmap_info
+ */
+function content_gmap_schema() {
+
+$schema['content_gmap'] = array(
+
+    'description' => t('Creates a Google Map on selected Node Types'),
+    'fields' => array(
+      'nid' => array('type' => 'int', 'not null' => TRUE, 'unsigned' => TRUE, 'default' => 0),
+      'uid' => array('type' => 'int', 'not null' => TRUE, 'unsigned' => TRUE, 'default' => 0),
+
+      /* Check box boolean to hide or show map on node - not every node may want one! */
+      'content_gmap_display' => array('type' => 'int', 'size' => 'small', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0),
+
+      /* Title of Map section and Type of Map to show via GMAPS */
+      'content_gmap_title' => array('type' => 'varchar', 'length' => 255, 'not null' => FALSE, 'sortable' => FALSE, 'default' => 'MAP'),
+      'content_gmap_type' => array('type' => 'varchar', 'length' => 255, 'not null' => FALSE, 'sortable' => FALSE, 'default' => 'ROADMAP'),
+
+      /* Width and Height of Map to display on Node */
+      'content_gmap_width' => array('type' => 'int', 'length' => '12', 'not null' => TRUE, 'unsigned' => TRUE, 'default' => 400),
+      'content_gmap_height' => array('type' => 'int', 'length' => '12', 'not null' => TRUE, 'unsigned' => TRUE, 'default' => 400),
+
+      /* Zoom level of map, latitude and longitude of Map passed to GMAPS */
+      'content_gmap_zoom' => array('type' => 'int', 'not null' => TRUE, 'unsigned' => TRUE, 'default' => 16),
+      'content_gmap_lat' => array('type' => 'float', 'unsigned' => FALSE, 'length' => '15', 'not null' => TRUE, 'default' => 35.65858),
+      'content_gmap_lng' => array('type' => 'float', 'unsigned' => FALSE, 'length' => '15', 'not null' => TRUE, 'default' => 139.745321),
+
+      /* Check box boolean to hide or show marker on map | Latitude and longitude for Marker  */
+       'content_gmap_marker' => array('type' => 'int', 'size' => 'small', 'unsigned' => TRUE, 'not null' => TRUE, 'default' => 0),
+       'content_gmap_mlat' => array('type' => 'float', 'unsigned' => FALSE, 'length' => '15', 'not null' => TRUE, 'default' => 35.65858),
+       'content_gmap_mlng' => array('type' => 'float', 'unsigned' => FALSE, 'length' => '15', 'not null' => TRUE, 'default' => 139.745321),
+
+      /* HTML for Google information bubble when Marker is clicked - not used in this version */
+      // 'content_gmap_info' => array('type' => 'text', 'not null' => TRUE, 'size' => 'normal', 'default' => ''),
+  ),
+    'primary key' => array('nid', 'uid'),
+
+  );
+
+  return $schema;
+}
